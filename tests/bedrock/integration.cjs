@@ -190,6 +190,23 @@ async function main() {
   assert(a.packets.some(p => p.type === 'update_soft_enum' && p.packet.action_type === 'update' &&
     (p.packet.enum_type === enumName(['delete']) || p.packet.enum_type.startsWith('nativecompletionfixture__arg'))))
   checks.push('Dynamic fixture candidates also use the SoftEnum REPLACE path')
+  if (process.env.BEDROCK_SELECTOR_CONVERSION === '1') {
+    // The server must have selector-auto-convert: true; NCTestA must be OP.
+    const selectorCases = [
+      ['/execute if entity @e[rm=0,r=20,c=1] run say GNC_BEDROCK_RADIUS', 'GNC_BEDROCK_RADIUS'],
+      ['/execute if entity @a[m=creative,lm=0,l=100] run say GNC_BEDROCK_MODE', 'GNC_BEDROCK_MODE'],
+      ['/execute if entity @a[rxm=-90,rx=90,rym=-180,ry=180] run say GNC_BEDROCK_ROTATION', 'GNC_BEDROCK_ROTATION'],
+      ['/execute if entity @e[c=-1] run say GNC_BEDROCK_FURTHEST', 'GNC_BEDROCK_FURTHEST'],
+      ['/execute if entity @e[distance=..20,limit=1] run say GNC_JAVA_PRESERVED', 'GNC_JAVA_PRESERVED'],
+      ['/say "@e[r=5]"', '@e[r=5]']
+    ]
+    for (const [source, expected] of selectorCases) {
+      const start = a.packets.length
+      await command(a, source)
+      await until('Selector conversion: ' + expected, () => a.packets.slice(start).some(
+        record => record.type === 'text' && record.packet.message.includes(expected)), 15000)
+    }
+  }
 }
 main().then(() => { console.log(`PASS: ${checks.length} checks`); process.exitCode = 0 })
   .catch(error => { console.error(error); process.exitCode = 1 })

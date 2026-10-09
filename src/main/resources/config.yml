@@ -14,6 +14,13 @@ max-total-nodes-per-player: 256
 max-total-candidates-per-player: 4096
 max-branches-per-command: 64
 max-candidate-length: 96
+# Bedrockセレクターの旧引数をJava形式へ変換する（Geyser経由のBedrockユーザーのみ）。
+# Java形式のdistance=やlimit=などはそのまま利用可能。/gnc reloadで反映。
+selector-auto-convert: true
+# 空なら原則すべてのコマンドで変換。必要なら対象のコマンド名を列挙。
+selector-auto-convert-commands: []
+# チャットなど、セレクターを単なる文字列として使うコマンドは除外。
+selector-auto-convert-exclude-commands: [say, me, msg, tell, w, whisper, teammsg, tm, tellraw, title, broadcast, bc, r, reply, mail, help, gnc]
 # 空なら、汎用コマンドとJava側に補完候補のあるSTRING引数を自動検出。
 include-commands: []
 exclude-commands: [geyser, gnc, help]

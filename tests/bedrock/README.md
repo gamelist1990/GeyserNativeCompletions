@@ -48,6 +48,8 @@ npm test
 
 `/gamemode`・`/defaultgamemode` の4候補、`/damage` のJavaのダメージ種別と既存の型、fixtureの型付きコマンド `/ncf_native` の候補の分離・動的更新を追加検証します。共有SoftEnumと重複する候補の表示抑制も検証。全20項目。
 
+セレクター自動変換も検証する場合は、プラグインで `selector-auto-convert: true` を指定し、`BEDROCK_NATIVE_ARGUMENTS=1` に加えて `BEDROCK_SELECTOR_CONVERSION=1` を指定して `npm test` を実行します。`NCTestA` はOPにしてください。`r/rm/c`・`m/lm/l`・角度指定・Java形式の維持・チャット本文の保持について、実際の `command_request` → Javaコマンド実行結果を確認します（追加6項目）。
+
 初回の候補・分岐・フォールバック・説明・権限情報、候補追加と削除の SoftEnum REPLACE、プレイヤーごとの候補分離、空になった分岐と復元時の AvailableCommands 再送を検証します。失敗時は終了コード1。受信パケットと結果は `results/latest.json` に保存します。
 全AvailableCommandsでサーバー定義 `help` の混入も検査します。
 他のコマンドの共有Enumが同時に分割・統合された場合は、候補の変更もAvailableCommandsに含まれます。テストでは両方の更新経路で候補が正しく届くことを確認し、fixture候補のSoftEnum REPLACEも別途受信検証します。
