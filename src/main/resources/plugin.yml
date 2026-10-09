@@ -1,0 +1,15 @@
+name: GeyserNativeCompletions
+version: '${version}'
+main: com.pexserver.completions.NativeCompletionsPlugin
+api-version: '1.21'
+depend: [Geyser-Spigot]
+description: Bedrock native argument completion bridge for Paper commands
+author: koukunn
+commands:
+  gnc:
+    description: Refresh and inspect native Bedrock completions
+    usage: /gnc <refresh|reload|status>
+    permission: gnc.admin
+permissions:
+  gnc.admin:
+    default: op

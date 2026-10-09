@@ -1,0 +1,15 @@
+name: NativeCompletionFixture
+version: '1.0'
+main: com.pexserver.completions.fixture.FixturePlugin
+api-version: '1.21'
+depend: [Geyser-Spigot]
+commands:
+  ncf:
+    description: Integration fixture
+  ncfdiag:
+    description: Test-only command packet isolation
+    usage: /ncfdiag <full|subset|helpfix|inspect|matrix|minimal|member|operator|enum|soft|string|message|raw|combined> [player] [arguments]
+    permission: ncf.diag
+permissions:
+  ncf.diag:
+    default: op

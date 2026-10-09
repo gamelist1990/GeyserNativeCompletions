@@ -1,0 +1,9 @@
+.gradle/
+build/
+run/
+.idea/
+*.iml
+
+.integration/
+tests/bedrock/node_modules/
+tests/bedrock/results/

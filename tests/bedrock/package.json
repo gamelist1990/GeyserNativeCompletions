@@ -1,0 +1,17 @@
+{
+  "name": "geyser-native-completions-bedrock-test",
+  "version": "1.0.0",
+  "description": "Live Bedrock protocol integration tests against Paper and Geyser",
+  "private": true,
+  "scripts": {
+    "test": "node integration.cjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "engines": { "node": ">=24" },
+  "type": "commonjs",
+  "dependencies": {
+    "bedrock-protocol": "3.60.1"
+  }
+}
