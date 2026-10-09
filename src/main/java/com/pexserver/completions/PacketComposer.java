@@ -126,6 +126,8 @@ public final class PacketComposer {
                     literal.setName("arg" + (i + 1));
                     literal.setEnumData(enumData(enumName(model.label(), node.prefix().subList(0, i + 1), false),
                             List.of(node.prefix().get(i)), false));
+                    if (model.contexts().getOrDefault(node.prefix().subList(0, i), List.of()).contains(node.prefix().get(i)))
+                        literal.getOptions().add(CommandParamOption.SUPPRESS_ENUM_AUTOCOMPLETION);
                     params.add(literal);
                 }
                 CommandParamData candidate = new CommandParamData();
@@ -144,8 +146,11 @@ public final class PacketComposer {
     private static CommandData arguments(CommandData command, Command model) {
         if (model.arguments().isEmpty()) return command;
         var overloads = command.getOverloads().clone();
+        var enumNames = argumentEnumNames(model);
+        record DisplayDomain(List<CommandParamData> prefix, String name, Set<String> candidates) {}
+        Set<DisplayDomain> displayed = new HashSet<>();
         boolean changed = false;
-        for (Argument argument : model.arguments()) {
+        for (Argument argument : sortedArguments(model)) {
             ArgumentKey key = argument.key();
             if (key.overload() < 0 || key.overload() >= overloads.length) continue;
             var old = overloads[key.overload()];
@@ -156,7 +161,10 @@ public final class PacketComposer {
             var copy = new CommandParamData();
             copy.setName(p.getName()); copy.setOptional(p.isOptional()); copy.setPostfix(p.getPostfix());
             copy.getOptions().addAll(p.getOptions());
-            copy.setEnumData(enumData(argumentEnumName(model.label(), key), argument.candidates(), true));
+            copy.setEnumData(enumData(enumNames.get(key), argument.candidates(), true));
+            var prefix = List.copyOf(Arrays.asList(command.getOverloads()[key.overload()].getOverloads()).subList(0, key.parameter()));
+            if (!displayed.add(new DisplayDomain(prefix, key.name(), Set.copyOf(argument.candidates()))))
+                copy.getOptions().add(CommandParamOption.SUPPRESS_ENUM_AUTOCOMPLETION);
             parameters[key.parameter()] = copy;
             overloads[key.overload()] = new CommandOverloadData(old.isChaining(), parameters);
             changed = true;
@@ -166,6 +174,30 @@ public final class PacketComposer {
     }
     static String argumentEnumName(String label, ArgumentKey key) {
         return enumName(label, List.of("java", Integer.toString(key.overload()), Integer.toString(key.parameter()), key.name()), true);
+    }
+    private static List<Argument> sortedArguments(Command model) {
+        return model.arguments().stream().sorted(Comparator.comparingInt((Argument a) -> a.key().overload())
+                .thenComparingInt(a -> a.key().parameter()).thenComparing(a -> a.key().name())).toList();
+    }
+    /** Reuse one SoftEnum for equal domains; membership changes require a new command packet. */
+    static Map<ArgumentKey, String> argumentEnumNames(Command model) {
+        record Domain(int parameter, String name, Set<String> candidates) {}
+        Map<Domain, String> shared = new HashMap<>();
+        Map<ArgumentKey, String> names = new HashMap<>();
+        for (Argument argument : sortedArguments(model)) {
+            ArgumentKey key = argument.key();
+            var domain = new Domain(key.parameter(), key.name(), Set.copyOf(argument.candidates()));
+            names.put(key, shared.computeIfAbsent(domain, ignored -> argumentEnumName(model.label(), key)));
+        }
+        return Map.copyOf(names);
+    }
+    private static Set<List<String>> suppressedLiterals(Command model) {
+        Set<List<String>> result = new HashSet<>();
+        var contexts = model.contexts();
+        for (Node node : model.nodes()) for (int i = 0; i < node.prefix().size(); i++)
+            if (contexts.getOrDefault(node.prefix().subList(0, i), List.of()).contains(node.prefix().get(i)))
+                result.add(List.copyOf(node.prefix().subList(0, i + 1)));
+        return result;
     }
     public static String enumName(String label, List<String> prefix, boolean soft) {
         String readable = label.replaceAll("[^a-zA-Z0-9_]", "_");
@@ -188,9 +220,15 @@ public final class PacketComposer {
         return result;
     }
     public static UpdateSoftEnumPacket replace(String label, Argument argument) {
+        return replaceArgument(argumentEnumName(label, argument.key()), argument);
+    }
+    public static UpdateSoftEnumPacket replace(Command model, Argument argument) {
+        return replaceArgument(argumentEnumNames(model).get(argument.key()), argument);
+    }
+    private static UpdateSoftEnumPacket replaceArgument(String name, Argument argument) {
         var result = new UpdateSoftEnumPacket();
         result.setType(SoftEnumUpdateType.REPLACE);
-        result.setSoftEnum(enumData(argumentEnumName(label, argument.key()), argument.candidates(), true));
+        result.setSoftEnum(enumData(name, argument.candidates(), true));
         return result;
     }
     public static boolean sameStructure(Map<String, Command> old, Map<String, Command> next) {
@@ -198,6 +236,8 @@ public final class PacketComposer {
         for (String key : old.keySet()) {
             if (!old.get(key).contexts().keySet().equals(next.get(key).contexts().keySet())) return false;
             if (!old.get(key).argumentContexts().keySet().equals(next.get(key).argumentContexts().keySet())) return false;
+            if (!argumentEnumNames(old.get(key)).equals(argumentEnumNames(next.get(key)))) return false;
+            if (!suppressedLiterals(old.get(key)).equals(suppressedLiterals(next.get(key)))) return false;
         }
         return true;
     }

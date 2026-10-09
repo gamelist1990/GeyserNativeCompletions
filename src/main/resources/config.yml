@@ -5,6 +5,7 @@ queries-per-tick: 8
 # 1回の外部プラグイン呼び出し自体を途中停止することはできない。
 budget-millis-per-tick: 2.0
 slow-query-millis: 10.0
+# Bukkitの候補をたどる深さ。既存の型付きOverloadでは引数位置を直接探索する。
 max-depth: 3
 max-nodes-per-command: 32
 max-candidates-per-node: 64
@@ -13,7 +14,7 @@ max-total-nodes-per-player: 256
 max-total-candidates-per-player: 4096
 max-branches-per-command: 64
 max-candidate-length: 96
-# 空なら、Bedrockに表示されている「引数情報の乏しいコマンド」を自動検出。
+# 空なら、汎用コマンドとJava側に補完候補のあるSTRING引数を自動検出。
 include-commands: []
 exclude-commands: [geyser, gnc, help]
 # 空入力では候補を返さないプラグイン向け。任意、既定では総当たりしない。

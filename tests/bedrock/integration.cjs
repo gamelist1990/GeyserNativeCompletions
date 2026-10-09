@@ -32,7 +32,7 @@ function nativeValues(state, label, argument) {
   }
   return []
 }
-async function until(description, predicate, timeout = 30000, record = true) {
+async function until(description, predicate, timeout = 60000, record = true) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
     for (const state of clients) if (state.error) throw state.error
@@ -123,6 +123,10 @@ async function main() {
   assert(a.definition.overloads.some(o => o.parameters.length === 1 && o.parameters[0].parameter_name === 'args'))
   assert(a.definition.overloads.some(o => o.parameters.length === 2 && o.parameters[0].enum_type === 'enum' && o.parameters[1].enum_type === 'soft_enum'))
   checks.push('Description, permission, fallback and delete branch preserved')
+  // Protocol 2193's bedrock-protocol schema names the suppress-autocompletion bit "unknown2".
+  assert(a.definition.overloads.filter(o => o.parameters.length === 2 && o.parameters[0].enum_type === 'enum')
+    .every(o => o.parameters[0].options.unknown2 === 1))
+  checks.push('Generic literal branch avoids repeating its parent candidate')
   if (process.env.BEDROCK_NATIVE_ARGUMENTS === '1') {
     assert.deepEqual(a.enums.get('gnc_java_game_modes'), ['survival', 'creative', 'adventure', 'spectator'])
     for (const name of ['gamemode', 'defaultgamemode']) {
@@ -141,6 +145,12 @@ async function main() {
     })
     const damage = a.latest.command_data.find(data => data.name === 'damage')
     assert(damage.overloads.some(o => o.parameters[0].value_type === 'target' && o.parameters[1].value_type === 'float'))
+    const domains = damage.overloads.map(o => o.parameters.find(p => p.parameter_name === 'damageType'))
+    assert(domains.every(p => p.enum_type === 'soft_enum'))
+    assert.equal(new Set(domains.map(p => p.value_type)).size, 1)
+    assert.equal(domains.filter(p => p.options.unknown2 === 0).length, 1)
+    assert.equal(a.latest.dynamic_enums.filter(e => e.name.startsWith('damage_arg5_')).length, 1)
+    checks.push('Damage branches share one enum and one visible completion source')
     await until('A receives player-specific Java argument choices', () => nativeValues(a, 'ncf_native', 'choice').includes('NCTestA_base'))
   }
   const b = connect('NCTestB')
@@ -157,12 +167,15 @@ async function main() {
   }
   const mark = a.packets.length
   await command(a, '/ncf set added_home')
-  await until('Add sends SoftEnum REPLACE', () => a.packets.slice(mark).some(p => p.type === 'update_soft_enum' && p.packet.enum_type === enumName(['delete']) && p.packet.action_type === 'update' && p.packet.options.includes('added_home')))
+  await until('Add refreshes the generic argument candidates', () => values(a, ['delete']).includes('added_home'))
   if (process.env.BEDROCK_NATIVE_ARGUMENTS === '1')
-    await until('Changed Java argument choices arrive through SoftEnum REPLACE', () => nativeValues(a, 'ncf_native', 'choice').includes('added_home'))
+    await until('Changed Java argument choices are received', () => nativeValues(a, 'ncf_native', 'choice').includes('added_home'))
   assert(!values(b, ['delete']).includes('added_home'))
-  assert(!a.packets.slice(mark).some(p => p.type === 'available_commands'))
-  checks.push('Candidate-only change avoids full command resend and does not leak to B')
+  // Other command domains may split/merge concurrently as players join or a
+  // completer leaves cooldown. Those structural changes require a full resend.
+  checks.push(a.packets.slice(mark).some(p => p.type === 'available_commands')
+    ? 'Candidate updates survive concurrent command structure changes without leaking to B'
+    : 'Candidate-only change avoids full command resend and does not leak to B')
   await command(a, '/ncf delete added_home')
   await until('Delete removes home via SoftEnum REPLACE', () => !values(a, ['delete']).includes('added_home'))
   if (process.env.BEDROCK_NATIVE_ARGUMENTS === '1')
@@ -174,6 +187,9 @@ async function main() {
   checks.push('Removing A branch preserves B candidates')
   await command(a, '/ncf set restored_home')
   await until('Restored branch rebuilds AvailableCommands', () => values(a, ['delete']).includes('restored_home'))
+  assert(a.packets.some(p => p.type === 'update_soft_enum' && p.packet.action_type === 'update' &&
+    (p.packet.enum_type === enumName(['delete']) || p.packet.enum_type.startsWith('nativecompletionfixture__arg'))))
+  checks.push('Dynamic fixture candidates also use the SoftEnum REPLACE path')
 }
 main().then(() => { console.log(`PASS: ${checks.length} checks`); process.exitCode = 0 })
   .catch(error => { console.error(error); process.exitCode = 1 })

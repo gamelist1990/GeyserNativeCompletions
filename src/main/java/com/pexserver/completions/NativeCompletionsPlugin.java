@@ -173,7 +173,10 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
             try { nativeProvider = javaSuggestions.forPlayer(player); }
             catch (ReflectiveOperationException e) { getLogger().log(Level.WARNING, "Cannot read player's Java command source", e); }
         }
-        for (CommandData data : baseline.getCommands()) {
+        // Give existing plugin completions priority under the shared per-player candidate cap.
+        List<CommandData> definitions = new ArrayList<>(baseline.getCommands());
+        definitions.sort(Comparator.comparing(data -> !PacketComposer.generic(data)));
+        for (CommandData data : definitions) {
             String label = data.getName().toLowerCase(Locale.ROOT);
             boolean generic = PacketComposer.generic(data);
             CommandData nativeData = JavaArgumentHints.gameModes(data);
@@ -223,22 +226,7 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
                 task.scan.step();
                 if (task.scan.done()) {
                     CompletionModel.Command raw = task.scan.result();
-                    List<Node> bounded = new ArrayList<>();
-                    for (Node node : raw.nodes()) {
-                        if (round.nodes >= settings.totalNodes || round.values >= settings.totalValues) break;
-                        List<String> values = node.candidates().subList(0,
-                                Math.min(node.candidates().size(), settings.totalValues - round.values));
-                        bounded.add(new Node(node.prefix(), values)); round.nodes++; round.values += values.size();
-                    }
-                    List<Argument> arguments = new ArrayList<>();
-                    for (Argument argument : raw.arguments()) {
-                        if (round.nodes >= settings.totalNodes || round.values >= settings.totalValues) break;
-                        List<String> values = argument.candidates().subList(0,
-                                Math.min(argument.candidates().size(), settings.totalValues - round.values));
-                        arguments.add(new Argument(argument.key(), values)); round.nodes++; round.values += values.size();
-                    }
-                    CompletionModel.Command model = new CompletionModel.Command(raw.label(), bounded, arguments);
-                    if (model.hasCandidates()) round.completed.put(task.label, model);
+                    if (raw.hasCandidates()) round.completed.put(task.label, raw);
                     round.pending.remove();
                 }
             } catch (RuntimeException e) {
@@ -248,7 +236,8 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
             }
         }
         if (round.pending.isEmpty()) {
-            if (round.revision == state.revision.get()) publish(state, Map.copyOf(round.completed));
+            if (round.revision == state.revision.get()) publish(state,
+                    CompletionBudget.bound(round.completed, settings.limits.nodes(), settings.totalNodes, settings.totalValues));
             state.round = null; state.nextRefresh = tick + settings.refresh;
         }
     }
@@ -268,8 +257,11 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
                     for (Node node : model.nodes()) if (!node.candidates().equals(old.get(node.prefix())))
                         state.session.sendUpstreamPacket(PacketComposer.replace(model.label(), node));
                     var oldArguments = current.get(model.label()).argumentContexts();
+                    var enumNames = PacketComposer.argumentEnumNames(model);
+                    Set<String> sent = new HashSet<>();
                     for (Argument argument : model.arguments()) if (!argument.candidates().equals(oldArguments.get(argument.key())))
-                        state.session.sendUpstreamPacket(PacketComposer.replace(model.label(), argument));
+                        if (sent.add(enumNames.get(argument.key())))
+                            state.session.sendUpstreamPacket(PacketComposer.replace(model, argument));
                 }
             } else {
                 AvailableCommandsPacket updated = PacketComposer.patch(state.baseline.get(), next);
@@ -343,7 +335,6 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
         final long revision; final Set<String> labels = new LinkedHashSet<>();
         final Queue<ScanTask> pending = new ArrayDeque<>();
         final Map<String, CompletionModel.Command> completed = new LinkedHashMap<>();
-        int nodes, values;
         Round(long revision) { this.revision = revision; }
     }
     private record ScanTask(String label, CompletionTask scan) {}

@@ -98,4 +98,19 @@ class NativeArgumentScanTest {
         var packet = new AvailableCommandsPacket(); packet.getCommands().add(data);
         assertSame(data, PacketComposer.patch(packet, Map.of("native", stale)).getCommands().getFirst());
     }
+    @Test void duplicateOverloadsShareOneQueryAndUnneededTailsAreNotExplored() {
+        var base = command();
+        var tail = new CommandParamData(); tail.setName("branch");
+        tail.setEnumData(PacketComposer.enumData("branch", List.of("one", "two", "three", "four"), false));
+        var args = new CommandParamData[]{base.getOverloads()[0].getOverloads()[0], base.getOverloads()[0].getOverloads()[1], tail};
+        var overload = new CommandOverloadData(false, args);
+        var data = new CommandData("native", "", Set.of(), CommandPermission.ANY, null, List.of(),
+                new CommandOverloadData[]{overload, overload});
+        List<String> calls = new ArrayList<>();
+        var model = finish(new NativeArgumentScan(data, limits, (input, name) -> {
+            calls.add(input); return CompletableFuture.completedFuture(List.of("value"));
+        }));
+        assertEquals(List.of("native 1 "), calls);
+        assertEquals(2, model.arguments().size());
+    }
 }

@@ -17,6 +17,9 @@ final class NativeArgumentScan implements CompletionTask {
     private final Provider provider;
     private final Queue<Path> paths = new ArrayDeque<>();
     private final Map<ArgumentKey, LinkedHashSet<String>> values = new LinkedHashMap<>();
+    private record Query(String input, String argument) {}
+    private final Map<Query, CompletableFuture<List<String>>> queries = new HashMap<>();
+    private final Map<Query, Long> queryExpires = new HashMap<>();
     private Path waiting;
     private CompletableFuture<List<String>> future;
     private long expires;
@@ -25,8 +28,8 @@ final class NativeArgumentScan implements CompletionTask {
     NativeArgumentScan(CommandData command, Limits limits, Provider provider) {
         this.command = command; this.label = command.getName().toLowerCase(Locale.ROOT);
         this.limits = limits; this.provider = provider;
-        for (int i = 0; i < command.getOverloads().length && i < limits.nodes(); i++)
-            paths.add(new Path(i, 0, label + " "));
+        for (int i = 0; i < command.getOverloads().length && paths.size() < limits.nodes(); i++)
+            if (remaining(i, 0)) paths.add(new Path(i, 0, label + " "));
     }
     static boolean supported(CommandData command) {
         for (var overload : command.getOverloads())
@@ -41,11 +44,12 @@ final class NativeArgumentScan implements CompletionTask {
             List<String> found = future.isDone() && !future.isCompletedExceptionally() ? future.getNow(List.of()) : List.of();
             var p = parameter(waiting);
             var key = new ArgumentKey(waiting.overload, waiting.parameter, p.getName());
-            var candidates = values.computeIfAbsent(key, ignored -> new LinkedHashSet<>());
+            var candidates = values.getOrDefault(key, new LinkedHashSet<>());
             for (String s : found) {
                 if (candidates.size() >= limits.candidates()) break;
                 if (validWord(s, limits.wordLength())) candidates.add(s);
             }
+            if (!candidates.isEmpty() && values.size() < limits.nodes()) values.putIfAbsent(key, candidates);
             // A representative prior value lets later arguments be queried without enumerating a registry's Cartesian product.
             next(waiting, candidates.isEmpty() ? List.of("word") : List.of(candidates.iterator().next()));
             waiting = null; future = null;
@@ -56,21 +60,33 @@ final class NativeArgumentScan implements CompletionTask {
         CommandParamData[] args = command.getOverloads()[path.overload].getOverloads();
         if (path.parameter >= args.length) return;
         var p = args[path.parameter];
-        if (queryable(p) && calls < limits.nodes()) {
-            calls++;
-            future = Objects.requireNonNull(provider.complete(path.prefix, p.getName()));
-            waiting = path; expires = System.nanoTime() + 2_000_000_000L;
+        if (queryable(p)) {
+            Query query = new Query(path.prefix, p.getName());
+            future = queries.get(query);
+            if (future == null) {
+                if (calls >= limits.nodes()) return;
+                calls++;
+                future = Objects.requireNonNull(provider.complete(path.prefix, p.getName()));
+                queries.put(query, future);
+                queryExpires.put(query, System.nanoTime() + 2_000_000_000L);
+            }
+            waiting = path; expires = queryExpires.get(query);
         } else next(path, samples(p));
     }
     private CommandParamData parameter(Path p) { return command.getOverloads()[p.overload].getOverloads()[p.parameter]; }
     private void next(Path path, List<String> samples) {
         int next = path.parameter + 1;
-        if (next >= command.getOverloads()[path.overload].getOverloads().length) return;
+        if (!remaining(path.overload, next)) return;
         int count = 0;
         for (String sample : samples) {
             if (count++ > 0 && branches++ >= limits.branches()) break;
             paths.add(new Path(path.overload, next, path.prefix + sample + " "));
         }
+    }
+    private boolean remaining(int overload, int start) {
+        var args = command.getOverloads()[overload].getOverloads();
+        for (int i = start; i < args.length; i++) if (queryable(args[i])) return true;
+        return false;
     }
     private List<String> samples(CommandParamData p) {
         if (p.getEnumData() != null) {
