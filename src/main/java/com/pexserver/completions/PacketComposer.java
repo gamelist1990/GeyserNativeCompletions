@@ -103,7 +103,7 @@ public final class PacketComposer {
     public static AvailableCommandsPacket patch(AvailableCommandsPacket baseline, Map<String, Command> models) {
         AvailableCommandsPacket result = new AvailableCommandsPacket();
         for (CommandData base : baseline.getCommands()) {
-            CommandData original = JavaArgumentHints.gameModes(base);
+            CommandData original = JavaArgumentHints.knownChoices(base);
             Command model = models.get(original.getName().toLowerCase(Locale.ROOT));
             if (model != null) original = arguments(original, model);
             if (model == null || model.nodes().isEmpty() || !generic(original)) {

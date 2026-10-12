@@ -96,7 +96,9 @@ class NativeArgumentScanTest {
         assertEquals(List.of("new", "old"), result.arguments().getFirst().candidates());
         var stale = new CompletionModel.Command("native", List.of(), List.of(new Argument(new ArgumentKey(0, 3, "different"), List.of("bad"))));
         var packet = new AvailableCommandsPacket(); packet.getCommands().add(data);
-        assertSame(data, PacketComposer.patch(packet, Map.of("native", stale)).getCommands().getFirst());
+        var patched = PacketComposer.patch(packet, Map.of("native", stale)).getCommands().getFirst();
+        assertEquals(CommandParam.STRING, patched.getOverloads()[0].getOverloads()[3].getType());
+        assertNull(patched.getOverloads()[0].getOverloads()[3].getEnumData());
     }
     @Test void duplicateOverloadsShareOneQueryAndUnneededTailsAreNotExplored() {
         var base = command();

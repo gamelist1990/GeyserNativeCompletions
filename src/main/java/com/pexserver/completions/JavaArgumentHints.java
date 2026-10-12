@@ -3,12 +3,65 @@ package com.pexserver.completions;
 import org.cloudburstmc.protocol.bedrock.data.command.*;
 import java.util.*;
 
-/** Finite Java argument domains lost by Geyser's parser-to-Bedrock type mapping. */
+/** Restores finite Java argument choices that Bedrock may not show from Geyser's native mappings. */
 final class JavaArgumentHints {
     private static final Set<String> MODE_COMMANDS = Set.of("gamemode", "defaultgamemode");
     private static final CommandEnumData GAME_MODES = PacketComposer.enumData("gnc_java_game_modes",
             List.of("survival", "creative", "adventure", "spectator"), true);
+    private static final int MAX_ENUM_CHOICES = 64;
     private JavaArgumentHints() {}
+
+    /** Use the actual Geyser/Java argument domain instead of special-casing particular commands. */
+    static CommandData knownChoices(CommandData command) {
+        return finiteArguments(gameModes(command));
+    }
+
+    private static CommandData finiteArguments(CommandData command) {
+        CommandOverloadData[] overloads = command.getOverloads().clone();
+        boolean changed = false;
+        for (int i = 0; i < overloads.length; i++) {
+            CommandOverloadData old = overloads[i];
+            CommandParamData[] arguments = old.getOverloads().clone();
+            boolean changedOverload = false;
+            for (int j = 0; j < arguments.length; j++) {
+                CommandParamData argument = arguments[j];
+                if (!finiteDomain(argument)) continue;
+                CommandEnumData source = argument.getEnumData();
+                List<String> values = source.getValues().keySet().stream().sorted().toList();
+                // Include the *domain* in the name: two enums with different values must never
+                // share a Bedrock SoftEnum ID. The same domain reuses one ID across overloads.
+                String name = PacketComposer.enumName("gnc_finite",
+                        List.of(source.getName(), String.join("\u0001", values)), true);
+                CommandParamData copy = new CommandParamData();
+                copy.setName(argument.getName()); copy.setOptional(argument.isOptional());
+                copy.setPostfix(argument.getPostfix()); copy.getOptions().addAll(argument.getOptions());
+                copy.setEnumData(new CommandEnumData(name, source.getValues(), true));
+                arguments[j] = copy;
+                changedOverload = true;
+            }
+            if (changedOverload) {
+                overloads[i] = new CommandOverloadData(old.isChaining(), arguments);
+                changed = true;
+            }
+        }
+        return changed ? new CommandData(command.getName(), command.getDescription(), command.getFlags(),
+                command.getPermission(), command.getAliases(), command.getSubcommands(), overloads) : command;
+    }
+
+    private static boolean finiteDomain(CommandParamData argument) {
+        CommandEnumData domain = argument.getEnumData();
+        if (domain == null || domain.isSoft() || argument.getPostfix() != null ||
+                argument.getOptions().contains(CommandParamOption.SUPPRESS_ENUM_AUTOCOMPLETION) ||
+                domain.getValues().size() < 2 || domain.getValues().size() > MAX_ENUM_CHOICES) return false;
+        // Soft enums cannot convey enum value constraints; keep these as hard enums.
+        if (domain.getValues().values().stream().anyMatch(constraints -> !constraints.isEmpty())) return false;
+        if (domain.getValues().keySet().stream().anyMatch(value -> !CompletionModel.validWord(value, 96))) return false;
+        // Geyser names merged literal branches after the first literal. They form command
+        // syntax (e.g. /effect give, /execute if/unless), not an argument's value domain.
+        String name = domain.getName();
+        return domain.getValues().keySet().stream()
+                .noneMatch(value -> name.equals(value) || name.startsWith(value + "_arg"));
+    }
 
     static boolean hasGameMode(CommandData command) {
         if (!modeCommand(command)) return false;
