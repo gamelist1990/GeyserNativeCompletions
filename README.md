@@ -19,7 +19,8 @@ Geyserの `extensions/` に入れる単独拡張ではありません。Paperの
 - 実際のプレイヤーで既存の `Command.tabComplete()` を先読み。コマンドの実行処理は呼びません。
 - 候補をたどり、`/home delete <ホーム名>` のような分岐をBedrockのOverloadに変換。
 - 詳細なコマンド定義では、候補のない `STRING` 引数を検出し、PaperのBrigadierから本人の権限でJavaの補完候補を取得。例えば `/damage` の `damageType` を動的SoftEnumに変換します。
-- 数値・座標・対象・固定分岐などの元の引数構造を保持し、候補を取得できた文字列引数だけにSoftEnumを設定。候補が空の引数は元のままです。
+- 数値・座標・対象・固定分岐などの元の引数構造を保持。候補を取得できた文字列引数はSoftEnumに変換し、候補のない引数はそのまま残します。
+- Geyserが既に持っている `true` / `false` などのBoolean型と、色・ディメンションなどの有限な選択肢を持つ引数も、コマンド名によらずSoftEnumに変換（最大64候補）。`/effect` 固有の処理は不要です。サブコマンドの固定分岐・単一候補・値の制約付きEnum・巨大な登録一覧は変更しません。
 - `/gamemode`・`/defaultgamemode` には survival・creative・adventure・spectator の候補を設定。
 - 候補だけの変更は `UpdateSoftEnumPacket` のREPLACE、分岐構造の変更は `AvailableCommandsPacket` で更新。
 - 元の定義・説明・別名・権限情報を保持。任意の追加引数を受け付けるフォールバックも追加。
@@ -119,7 +120,7 @@ selector-auto-convert-exclude-commands: [say, me, msg, tell, w, whisper, teammsg
 
 - 有限の候補を、空入力や既知のサブコマンドから取得できるBukkit／BasicCommandが主な対象です。
 - 数字や自由文に依存する無限の分岐、候補内の空白・引用符、TABイベントだけで提供する補完は自動変換できません。
-- 既に詳細なBrigadier引数定義を持つコマンドは、候補のない文字列引数を補強します。元の対象・数値型や固定Enumは上書きしません。
+- 既に詳細なBrigadier引数定義を持つコマンドは、候補のない文字列引数を補強し、適切な有限EnumをSoftEnumに変換します。対象・数値型やサブコマンドの固定分岐は維持します。
 - `@e[...]` 内のキーの補完はBedrockクライアントのセレクター文法が担当します。このパケット方式では `distance`・`limit`・`sort` などのJava文法へ差し替えられません。セレクター全体をSoftEnumにした比較版は引用符を付けて挿入されるため、製品版には入れていません。
 - 同じ候補をどの引数位置にも返す処理は、無限に展開しないよう探索を止めます。
 - 外部プラグインの補完関数を途中停止できません。遅い関数は呼び出し後に休止します。

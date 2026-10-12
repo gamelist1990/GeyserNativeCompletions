@@ -201,7 +201,7 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
         for (CommandData data : definitions) {
             String label = data.getName().toLowerCase(Locale.ROOT);
             boolean generic = PacketComposer.generic(data);
-            CommandData nativeData = JavaArgumentHints.gameModes(data);
+            CommandData nativeData = JavaArgumentHints.knownChoices(data);
             if ((!generic && (nativeProvider == null || !NativeArgumentScan.supported(nativeData))) || settings.excluded.contains(label) ||
                     (!settings.included.isEmpty() && !settings.included.contains(label))) continue;
             org.bukkit.command.Command command = Bukkit.getCommandMap().getCommand(label);

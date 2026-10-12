@@ -129,16 +129,43 @@ async function main() {
   checks.push('Generic literal branch avoids repeating its parent candidate')
   if (process.env.BEDROCK_NATIVE_ARGUMENTS === '1') {
     assert.deepEqual(a.enums.get('gnc_java_game_modes'), ['survival', 'creative', 'adventure', 'spectator'])
+    const definitionSnapshot = a.latest
     for (const name of ['gamemode', 'defaultgamemode']) {
-      const definition = a.latest.command_data.find(data => {
-        const aliases = a.latest.enums[data.alias]
-        return data.name === name || aliases && aliases.values.some(index => a.latest.enum_values[index] === name)
+      const definition = definitionSnapshot.command_data.find(data => {
+        const aliases = definitionSnapshot.enums[data.alias]
+        return data.name === name || aliases && aliases.values.some(index => definitionSnapshot.enum_values[index] === name)
       })
       assert(definition, 'OP test client must receive /' + name)
       assert(definition.overloads.some(overload => overload.parameters.some(parameter =>
         parameter.parameter_name === 'gamemode' && parameter.enum_type === 'soft_enum')))
     }
     checks.push('Java game mode choices are received for gamemode and defaultgamemode')
+    const effect = definitionSnapshot.command_data.find(data => data.name === 'effect')
+    assert(effect, 'OP test client must receive /effect')
+    const effectBoolean = effect.overloads.flatMap(overload => overload.parameters)
+      .filter(param => param.parameter_name === 'hideParticles')
+    assert.equal(effectBoolean.length, 2)
+    assert(effectBoolean.every(param => param.enum_type === 'soft_enum' && param.optional))
+    const finiteChoice = param => definitionSnapshot.dynamic_enums[param.value_type]
+    assert(effectBoolean.every(param =>
+      finiteChoice(param)?.name.startsWith('gnc_finite_') &&
+      ['true', 'false'].every(value => finiteChoice(param).values.includes(value))))
+    checks.push('Effect hideParticles optional Boolean is explicitly offered as true/false SoftEnum')
+    for (const [name, argument] of [['bossbar', 'visible'], ['random', 'includeWorldSeed']]) {
+      const definition = definitionSnapshot.command_data.find(data => data.name === name)
+      assert(definition, 'Expected Java command /' + name)
+      const matches = definition.overloads.flatMap(o => o.parameters)
+        .filter(p => p.parameter_name === argument)
+      assert(matches.length > 0, 'Expected ' + argument + ' in /' + name)
+      assert(matches.every(param => param.enum_type === 'soft_enum' &&
+        finiteChoice(param)?.values.includes('true') && finiteChoice(param)?.values.includes('false')))
+    }
+    checks.push('Boolean arguments in bossbar and random are detected automatically')
+    const dimension = definitionSnapshot.command_data.find(d => d.name === 'minecraft:execute')
+    const dimensions = dimension?.overloads.flatMap(o => o.parameters).filter(p =>
+      p.parameter_name === 'dimension' && p.enum_type === 'soft_enum') || []
+    assert(dimensions.some(p => finiteChoice(p)?.values.includes('minecraft:overworld')))
+    checks.push('Finite non-Boolean enum arguments are detected automatically')
     await until('Java damage types become native argument SoftEnums', () => {
       const choices = nativeValues(a, 'damage', 'damageType')
       return choices.some(v => /(^|:)fall$/.test(v)) && choices.some(v => /(^|:)generic$/.test(v))
