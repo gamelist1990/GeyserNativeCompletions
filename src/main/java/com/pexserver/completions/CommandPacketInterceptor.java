@@ -21,8 +21,8 @@ public final class CommandPacketInterceptor extends ChannelOutboundHandlerAdapte
     public void markGenerated(AvailableCommandsPacket packet) { generated.add(packet); }
     public void unmarkGenerated(AvailableCommandsPacket packet) { generated.remove(packet); }
     @Override public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
-        if (msg instanceof BedrockPacketWrapper wrapper && wrapper.getSenderSubClientId() == 0 &&
-                wrapper.getTargetSubClientId() == 0 && wrapper.getPacketBuffer() == null &&
+        if (msg instanceof BedrockPacketWrapper wrapper && subClientId(wrapper, "getSenderSubClientId") == 0 &&
+                subClientId(wrapper, "getTargetSubClientId") == 0 && wrapper.getPacketBuffer() == null &&
                 wrapper.getPacket() instanceof AvailableCommandsPacket available) {
             boolean owned = generated.remove(available);
             try {
@@ -34,5 +34,14 @@ public final class CommandPacketInterceptor extends ChannelOutboundHandlerAdapte
             }
         }
         ctx.write(msg, promise);
+    }
+
+    private static int subClientId(BedrockPacketWrapper wrapper, String getter) {
+        try {
+            Object value = BedrockPacketWrapper.class.getMethod(getter).invoke(wrapper);
+            return value instanceof Byte id ? Byte.toUnsignedInt(id) : (Integer) value;
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unsupported BedrockPacketWrapper API", e);
+        }
     }
 }
