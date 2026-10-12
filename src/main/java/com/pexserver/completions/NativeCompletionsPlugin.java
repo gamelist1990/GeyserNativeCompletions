@@ -5,7 +5,9 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -26,6 +28,9 @@ import static com.pexserver.completions.CompletionModel.*;
 /** Same-server Paper + Geyser-Spigot bridge; intentionally does not execute commands. */
 public final class NativeCompletionsPlugin extends JavaPlugin implements Listener {
     private static final String HANDLER = "pex-native-completions";
+    private static final List<String> DEFAULT_SELECTOR_EXCLUDED = List.of(
+            "say", "me", "msg", "tell", "w", "whisper", "teammsg", "tm",
+            "tellraw", "title", "broadcast", "bc", "r", "reply", "mail", "help", "gnc");
     private final Map<UUID, State> states = new LinkedHashMap<>();
     private final Map<GeyserSession, State> sessions = new ConcurrentHashMap<>();
     private final EventRegistrar registrar = new EventRegistrar() {};
@@ -73,6 +78,23 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
         dirtyAll();
     }
     private void dirtyAll() { states.values().forEach(s -> s.nextRefresh = 0); }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onBedrockCommand(PlayerCommandPreprocessEvent event) {
+        Settings current = settings;
+        if (!current.selectorAutoConvert || !(GeyserApi.api().connectionByUuid(event.getPlayer().getUniqueId()) instanceof GeyserSession)) return;
+        String input = event.getMessage();
+        if (input.length() < 2 || input.charAt(0) != '/') return;
+        int end = 1;
+        while (end < input.length() && !Character.isWhitespace(input.charAt(end))) end++;
+        String root = input.substring(1, end).toLowerCase(Locale.ROOT);
+        int namespace = root.indexOf(':');
+        if (namespace >= 0) root = root.substring(namespace + 1);
+        if (current.selectorExcluded.contains(root) ||
+                (!current.selectorIncluded.isEmpty() && !current.selectorIncluded.contains(root))) return;
+        String converted = BedrockSelectorConverter.rewrite(input);
+        if (!converted.equals(input)) event.setMessage(converted);
+    }
 
     private void attach(Player player) {
         if (stopping || !player.isOnline() || states.containsKey(player.getUniqueId())) return;
@@ -308,7 +330,11 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
                 clamp(c.getInt("max-total-candidates-per-player", 4096), 1, 65536),
                 names(c.getStringList("include-commands")), names(c.getStringList("exclude-commands")),
                 c.getStringList("prefix-probes").stream().filter(s -> !s.isBlank() && s.length() <= 16).limit(16).toList(),
-                Map.copyOf(extra));
+                Map.copyOf(extra),
+                c.getBoolean("selector-auto-convert", true),
+                names(c.getStringList("selector-auto-convert-commands")),
+                names(c.isSet("selector-auto-convert-exclude-commands")
+                        ? c.getStringList("selector-auto-convert-exclude-commands") : DEFAULT_SELECTOR_EXCLUDED));
     }
     private static Set<String> names(List<String> values) {
         Set<String> result = new HashSet<>(); values.forEach(s -> result.add(s.toLowerCase(Locale.ROOT))); return Set.copyOf(result);
@@ -320,7 +346,8 @@ public final class NativeCompletionsPlugin extends JavaPlugin implements Listene
     }
     private record Settings(int refresh, int queries, long budgetNanos, long slowNanos, Limits limits,
                             int maxCommands, int totalNodes, int totalValues, Set<String> included, Set<String> excluded,
-                            List<String> prefixProbes, Map<String, List<List<String>>> extra) {}
+                            List<String> prefixProbes, Map<String, List<List<String>>> extra,
+                            boolean selectorAutoConvert, Set<String> selectorIncluded, Set<String> selectorExcluded) {}
     private static final class State {
         UUID uuid; final GeyserSession session; final Channel channel;
         final AtomicReference<AvailableCommandsPacket> baseline = new AtomicReference<>();

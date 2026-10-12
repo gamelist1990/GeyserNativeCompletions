@@ -76,6 +76,45 @@ extra-contexts:
 元のBrigadier定義にある型付き引数はそのまま保持します。
 文字列引数の候補はその位置へ追加します。
 
+## Bedrockセレクターの自動変換
+
+`selector-auto-convert: true`（既定で有効）にすると、**Geyser経由のBedrockプレイヤーがコマンドを実行する直前に**、Bedrock形式のセレクター引数をJava形式へ変換します。Java版プレイヤーのコマンドには干渉しません。補完パケットやBedrockの標準UIには手を加えません。
+
+```mcfunction
+/execute if entity @e[rm=3,r=20,c=1] run say ok
+# Javaサーバーへの実行内容: /execute if entity @e[distance=3..20,limit=1,sort=nearest] run say ok
+/kill @a[m=creative,lm=10]
+# Javaサーバーへの実行内容: /kill @a[gamemode=creative,level=10..]
+```
+
+| Bedrock引数 | Java引数 | 補足 |
+|---|---|---|
+| `r` / `rm` | `distance` | 最大・最小距離を範囲表現にまとめる |
+| `c` | `limit`, `sort` | 正数ならnearest（`@r`はrandom）、負数ならfurthest |
+| `m` | `gamemode` | モード名、0～3の数値、否定指定に対応 |
+| `l` / `lm` | `level` | 経験値レベルの上下限 |
+| `rx` / `rxm` | `x_rotation` | 角度範囲（-90～90） |
+| `ry` / `rym` | `y_rotation` | 角度範囲（-180～180） |
+
+Java形式の `distance=`、`limit=`、`sort=`、`gamemode=`、`nbt=`、`scores=` などは**そのまま記述可能**。競合する同種のBedrock引数とJava引数がある場合、そのセレクター全体を変更しません。複数のセレクター、引用符やNBT・scores内のカンマにも対応します。
+
+```yaml
+selector-auto-convert: true # falseで無効化。/gnc reloadで反映
+selector-auto-convert-commands: [] # 空なら除外コマンド以外を対象にする
+selector-auto-convert-exclude-commands: [say, me, msg, tell, w, whisper, teammsg, tm, tellraw, title, broadcast, bc, r, reply, mail, help, gnc]
+```
+
+セレクターは**コマンドの実行時**に書き換えられます。Bedrockクライアントが表示する `@e[...]` の候補名をJavaの候補名へ変更するものではありません。チャット・JSON中のテキストは置換対象ではないので、用途に応じて対象コマンドを `selector-auto-convert-commands` で明示できます。
+
+以下は誤変換を防ぐため未対応です。
+
+- Bedrock独自の `family`、`hasitem`、`haspermission`、`has_property`（Javaセレクターに単純対応する構文なし）。
+- `@initiator` や `@r[type=mob]` のようにJavaと対象範囲が異なる指定。
+- 範囲が反転する、値が不正、Java側の同じ引数と競合する、意味を一意に変換できない指定。
+- `x/y/z` の整数の中心補正など、エディション間で異なる細かな座標解釈。
+
+対応外の引数を含むセレクターは元の入力を維持します。これは自動変換が失敗した場合にJava側でエラーとなる可能性があることを意味します。対応のない独自構文を黙って別の意味に書き換えることはしません。
+
 ## 対応範囲
 
 - 有限の候補を、空入力や既知のサブコマンドから取得できるBukkit／BasicCommandが主な対象です。
